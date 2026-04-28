@@ -6,7 +6,10 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from typing import Optional
+from typing import Optional, Any, Dict
+from functools import wraps
+from collections import OrderedDict
+import threading
 
 load_dotenv()
 
@@ -16,6 +19,10 @@ AUTH_TOKEN = os.getenv("QOBUZ_AUTH_TOKEN")
 
 BASE = "https://www.qobuz.com/api.json/0.2"
 
+# Cache configuration
+CACHE_TTL = int(os.getenv("CACHE_TTL", 300))  # Default 5 minutes
+CACHE_MAX_SIZE = int(os.getenv("CACHE_MAX_SIZE", 1000))  # Default 1000 entries
+
 app = FastAPI(title="Qobuz API")
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +30,116 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class LRUCache:
+    """Thread-safe LRU cache with TTL support"""
+    
+    def __init__(self, max_size: int = 1000, default_ttl: int = 300):
+        self.max_size = max_size
+        self.default_ttl = default_ttl
+        self._cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+        self._lock = threading.Lock()
+    
+    def _generate_key(self, endpoint: str, **kwargs) -> str:
+        """Generate a unique cache key from endpoint and parameters"""
+        key_parts = [endpoint]
+        for k, v in sorted(kwargs.items()):
+            key_parts.append(f"{k}={v}")
+        return hashlib.md5("|".join(key_parts).encode()).hexdigest()
+    
+    def get(self, key: str) -> Optional[Any]:
+        """Get value from cache if exists and not expired"""
+        with self._lock:
+            if key not in self._cache:
+                return None
+            
+            entry = self._cache[key]
+            if time.time() > entry["expires_at"]:
+                # Entry expired, remove it
+                del self._cache[key]
+                return None
+            
+            # Move to end (most recently used)
+            self._cache.move_to_end(key)
+            return entry["value"]
+    
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+        """Set value in cache with optional TTL"""
+        with self._lock:
+            # If key exists, remove old entry first
+            if key in self._cache:
+                del self._cache[key]
+            
+            # Evict oldest entries if at capacity
+            while len(self._cache) >= self.max_size:
+                self._cache.popitem(last=False)
+            
+            self._cache[key] = {
+                "value": value,
+                "expires_at": time.time() + (ttl or self.default_ttl)
+            }
+    
+    def invalidate(self, pattern: Optional[str] = None) -> int:
+        """Invalidate cache entries. If pattern is None, clear all."""
+        with self._lock:
+            if pattern is None:
+                count = len(self._cache)
+                self._cache.clear()
+                return count
+            
+            # Invalidate keys matching pattern (simple substring match)
+            keys_to_remove = [k for k in self._cache.keys() if pattern in k]
+            for key in keys_to_remove:
+                del self._cache[key]
+            return len(keys_to_remove)
+    
+    def stats(self) -> Dict[str, Any]:
+        """Return cache statistics"""
+        with self._lock:
+            now = time.time()
+            total = len(self._cache)
+            expired = sum(1 for e in self._cache.values() if now > e["expires_at"])
+            return {
+                "size": total,
+                "max_size": self.max_size,
+                "default_ttl": self.default_ttl,
+                "expired_entries": expired,
+                "active_entries": total - expired
+            }
+
+
+# Global cache instance
+cache = LRUCache(max_size=CACHE_MAX_SIZE, default_ttl=CACHE_TTL)
+
+
+def cached_endpoint(endpoint_name: str, ttl: Optional[int] = None):
+    """Decorator to cache endpoint responses"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Extract function arguments for cache key
+            func_kwargs = {}
+            for arg_name, arg_value in kwargs.items():
+                if arg_name not in ['request', 'background_tasks']:
+                    func_kwargs[arg_name] = arg_value
+            
+            cache_key = cache._generate_key(endpoint_name, **func_kwargs)
+            
+            # Try to get from cache
+            cached_value = cache.get(cache_key)
+            if cached_value is not None:
+                return cached_value
+            
+            # Call the actual function
+            result = await func(*args, **kwargs)
+            
+            # Store in cache
+            cache.set(cache_key, result, ttl)
+            
+            return result
+        return wrapper
+    return decorator
 
 
 def get_token() -> str:
@@ -42,6 +159,7 @@ async def index():
 
 
 @app.get("/search")
+@cached_endpoint("search", ttl=300)  # Cache search results for 5 minutes
 async def search(q: str = Query(...), limit: int = 20):
     token = get_token()
     async with httpx.AsyncClient() as client:
@@ -58,6 +176,7 @@ async def search(q: str = Query(...), limit: int = 20):
 
 
 @app.get("/track/{track_id}")
+@cached_endpoint("track", ttl=600)  # Cache track info for 10 minutes
 async def get_track(track_id: str):
     token = get_token()
     async with httpx.AsyncClient() as client:
@@ -73,6 +192,7 @@ async def get_track(track_id: str):
 
 
 @app.get("/stream/{track_id}")
+@cached_endpoint("stream", ttl=60)  # Cache stream URLs for 1 minute (they expire)
 async def stream(
     track_id: str,
     format_id: int = Query(default=27, description="27=HiRes 192kHz, 7=HiRes 96kHz, 6=FLAC 16-bit, 5=MP3 320")
@@ -97,6 +217,7 @@ async def stream(
 
 
 @app.get("/album/{album_id}")
+@cached_endpoint("album", ttl=600)  # Cache album info for 10 minutes
 async def get_album(album_id: str):
     token = get_token()
     async with httpx.AsyncClient() as client:
@@ -112,6 +233,7 @@ async def get_album(album_id: str):
 
 
 @app.get("/artist/{artist_id}")
+@cached_endpoint("artist", ttl=600)  # Cache artist info for 10 minutes
 async def get_artist(artist_id: str, limit: int = 25):
     token = get_token()
     async with httpx.AsyncClient() as client:
@@ -128,6 +250,7 @@ async def get_artist(artist_id: str, limit: int = 25):
 
 
 @app.get("/playlist/{playlist_id}")
+@cached_endpoint("playlist", ttl=300)  # Cache playlist info for 5 minutes
 async def get_playlist(playlist_id: str):
     token = get_token()
     async with httpx.AsyncClient() as client:
@@ -140,6 +263,19 @@ async def get_playlist(playlist_id: str):
             raise HTTPException(status_code=401, detail="Qobuz token expired — update QOBUZ_AUTH_TOKEN")
         r.raise_for_status()
         return r.json()
+
+
+@app.get("/cache/stats")
+async def get_cache_stats():
+    """Get cache statistics"""
+    return cache.stats()
+
+
+@app.delete("/cache")
+async def clear_cache(pattern: Optional[str] = None):
+    """Clear cache entries. If pattern is provided, only clear matching entries."""
+    count = cache.invalidate(pattern)
+    return {"cleared": count, "pattern": pattern}
 
 
 if __name__ == "__main__":

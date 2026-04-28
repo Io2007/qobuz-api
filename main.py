@@ -71,8 +71,8 @@ class LRUCache:
             self._cache.move_to_end(key)
             return entry["value"]
     
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
-        """Set value in cache with optional TTL"""
+    def set(self, key: str, value: Any, ttl: Optional[int] = None, endpoint: Optional[str] = None) -> None:
+        """Set value in cache with optional TTL and endpoint tracking"""
         with self._lock:
             # If key exists, remove old entry first
             if key in self._cache:
@@ -84,7 +84,9 @@ class LRUCache:
             
             self._cache[key] = {
                 "value": value,
-                "expires_at": time.time() + (ttl or self.default_ttl)
+                "expires_at": time.time() + (ttl or self.default_ttl),
+                "endpoint": endpoint,
+                "ttl": ttl or self.default_ttl
             }
     
     def invalidate(self, pattern: Optional[str] = None) -> int:
@@ -107,12 +109,19 @@ class LRUCache:
             now = time.time()
             total = len(self._cache)
             expired = sum(1 for e in self._cache.values() if now > e["expires_at"])
+            
+            # Count entries by endpoint
+            endpoints: Dict[str, int] = {}
+            for entry in self._cache.values():
+                endpoint = entry.get("endpoint", "unknown")
+                endpoints[endpoint] = endpoints.get(endpoint, 0) + 1
+            
             return {
                 "size": total,
                 "max_size": self.max_size,
-                "default_ttl": self.default_ttl,
                 "expired_entries": expired,
-                "active_entries": total - expired
+                "active_entries": total - expired,
+                "endpoints": endpoints
             }
 
 
@@ -141,8 +150,8 @@ def cached_endpoint(endpoint_name: str, ttl: Optional[int] = None):
             # Call the actual function
             result = await func(*args, **kwargs)
             
-            # Store in cache
-            cache.set(cache_key, result, ttl)
+            # Store in cache with endpoint info
+            cache.set(cache_key, result, ttl, endpoint=endpoint_name)
             
             return result
         return wrapper

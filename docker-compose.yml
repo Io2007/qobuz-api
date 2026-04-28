@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  qobuz-api:
+    build: .
+    container_name: qobuz-api
+    restart: unless-stopped
+    environment:
+      - QOBUZ_APP_ID=${QOBUZ_APP_ID}
+      - QOBUZ_APP_SECRET=${QOBUZ_APP_SECRET}
+      - QOBUZ_AUTH_TOKEN=${QOBUZ_AUTH_TOKEN}
+      - PORT=8000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.qobuz-api.rule=Host(`${QOBUZ_HOST:-qobuz-api.localhost}`)"
+      - "traefik.http.routers.qobuz-api.entrypoints=websecure"
+      - "traefik.http.routers.qobuz-api.tls.certresolver=myresolver"
+      - "traefik.http.services.qobuz-api.loadbalancer.server.port=8000"
+    networks:
+      - traefik-network
+
+networks:
+  traefik-network:
+    external: true

@@ -20,16 +20,14 @@ venv/
 __pycache__/
 .mypy_cache/
 .pytest_cache/
+coverage/
+htmlcov/
+.coverage
+
+# Build artifacts
 dist/
 build/
 target/
-.gradle/
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Compiled files
 *.pyc
 *.class
 *.o
@@ -40,10 +38,9 @@ Thumbs.db
 *.obj
 *.out
 
-# Coverage
-coverage/
-htmlcov/
-.coverage
+# System files
+.DS_Store
+Thumbs.db
 
 # Compressed files
 *.zip

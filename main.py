@@ -20,8 +20,15 @@ AUTH_TOKEN = os.getenv("QOBUZ_AUTH_TOKEN")
 BASE = "https://www.qobuz.com/api.json/0.2"
 
 # Cache configuration
-CACHE_TTL = int(os.getenv("CACHE_TTL", 300))  # Default 5 minutes
 CACHE_MAX_SIZE = int(os.getenv("CACHE_MAX_SIZE", 1000))  # Default 1000 entries
+
+# Endpoint-specific TTL configuration (in seconds)
+CACHE_TTL_SEARCH = int(os.getenv("CACHE_TTL_SEARCH", 300))  # Search: 5 minutes
+CACHE_TTL_TRACK = int(os.getenv("CACHE_TTL_TRACK", 600))  # Track: 10 minutes
+CACHE_TTL_STREAM = int(os.getenv("CACHE_TTL_STREAM", 60))  # Stream: 1 minute
+CACHE_TTL_ALBUM = int(os.getenv("CACHE_TTL_ALBUM", 600))  # Album: 10 minutes
+CACHE_TTL_ARTIST = int(os.getenv("CACHE_TTL_ARTIST", 600))  # Artist: 10 minutes
+CACHE_TTL_PLAYLIST = int(os.getenv("CACHE_TTL_PLAYLIST", 300))  # Playlist: 5 minutes
 
 app = FastAPI(title="Qobuz API")
 app.add_middleware(
@@ -109,8 +116,8 @@ class LRUCache:
             }
 
 
-# Global cache instance
-cache = LRUCache(max_size=CACHE_MAX_SIZE, default_ttl=CACHE_TTL)
+# Global cache instance (using a default TTL, but endpoints override this)
+cache = LRUCache(max_size=CACHE_MAX_SIZE, default_ttl=CACHE_TTL_SEARCH)
 
 
 def cached_endpoint(endpoint_name: str, ttl: Optional[int] = None):
@@ -159,7 +166,7 @@ async def index():
 
 
 @app.get("/search")
-@cached_endpoint("search", ttl=300)  # Cache search results for 5 minutes
+@cached_endpoint("search", ttl=CACHE_TTL_SEARCH)  # Cache search results for 5 minutes
 async def search(q: str = Query(...), limit: int = 20):
     token = get_token()
     async with httpx.AsyncClient() as client:
@@ -176,7 +183,7 @@ async def search(q: str = Query(...), limit: int = 20):
 
 
 @app.get("/track/{track_id}")
-@cached_endpoint("track", ttl=600)  # Cache track info for 10 minutes
+@cached_endpoint("track", ttl=CACHE_TTL_TRACK)  # Cache track info for 10 minutes
 async def get_track(track_id: str):
     token = get_token()
     async with httpx.AsyncClient() as client:
@@ -192,7 +199,7 @@ async def get_track(track_id: str):
 
 
 @app.get("/stream/{track_id}")
-@cached_endpoint("stream", ttl=60)  # Cache stream URLs for 1 minute (they expire)
+@cached_endpoint("stream", ttl=CACHE_TTL_STREAM)  # Cache stream URLs for 1 minute (they expire)
 async def stream(
     track_id: str,
     format_id: int = Query(default=27, description="27=HiRes 192kHz, 7=HiRes 96kHz, 6=FLAC 16-bit, 5=MP3 320")
@@ -217,7 +224,7 @@ async def stream(
 
 
 @app.get("/album/{album_id}")
-@cached_endpoint("album", ttl=600)  # Cache album info for 10 minutes
+@cached_endpoint("album", ttl=CACHE_TTL_ALBUM)  # Cache album info for 10 minutes
 async def get_album(album_id: str):
     token = get_token()
     async with httpx.AsyncClient() as client:
@@ -233,7 +240,7 @@ async def get_album(album_id: str):
 
 
 @app.get("/artist/{artist_id}")
-@cached_endpoint("artist", ttl=600)  # Cache artist info for 10 minutes
+@cached_endpoint("artist", ttl=CACHE_TTL_ARTIST)  # Cache artist info for 10 minutes
 async def get_artist(artist_id: str, limit: int = 25):
     token = get_token()
     async with httpx.AsyncClient() as client:
@@ -250,7 +257,7 @@ async def get_artist(artist_id: str, limit: int = 25):
 
 
 @app.get("/playlist/{playlist_id}")
-@cached_endpoint("playlist", ttl=300)  # Cache playlist info for 5 minutes
+@cached_endpoint("playlist", ttl=CACHE_TTL_PLAYLIST)  # Cache playlist info for 5 minutes
 async def get_playlist(playlist_id: str):
     token = get_token()
     async with httpx.AsyncClient() as client:

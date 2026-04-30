@@ -176,15 +176,18 @@ async def index():
 
 @app.get("/search")
 @cached_endpoint("search", ttl=CACHE_TTL_SEARCH)  # Cache search results for 5 minutes
-async def search(q: str = Query(...), limit: int = 20):
+async def search(q: str = Query(...), limit: int = 20, artist: Optional[str] = Query(None, description="Filter search results by artist name")):
     token = get_token()
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{BASE}/catalog/search", params={
+        params = {
             "query": q,
             "limit": limit,
             "app_id": APP_ID,
             "user_auth_token": token
-        })
+        }
+        if artist:
+            params["extra"] = f"artist:\"{artist}\""
+        r = await client.get(f"{BASE}/catalog/search", params=params)
         if r.status_code == 401:
             raise HTTPException(status_code=401, detail="Qobuz token expired — update QOBUZ_AUTH_TOKEN")
         r.raise_for_status()

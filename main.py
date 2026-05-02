@@ -179,14 +179,17 @@ async def index():
 async def search(q: str = Query(...), limit: int = 20, artist: Optional[str] = Query(None, description="Filter search results by artist name")):
     token = get_token()
     async with httpx.AsyncClient() as client:
+        # Build the query string with optional artist filter
+        query_string = q
+        if artist:
+            query_string = f"{q} artist:\"{artist}\""
+        
         params = {
-            "query": q,
+            "query": query_string,
             "limit": limit,
             "app_id": APP_ID,
             "user_auth_token": token
         }
-        if artist:
-            params["extra"] = f"artist:\"{artist}\""
         r = await client.get(f"{BASE}/catalog/search", params=params)
         if r.status_code == 401:
             raise HTTPException(status_code=401, detail="Qobuz token expired — update QOBUZ_AUTH_TOKEN")

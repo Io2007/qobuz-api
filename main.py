@@ -179,22 +179,38 @@ async def index():
 async def search(q: str = Query(...), limit: int = 20, artist: Optional[str] = Query(None, description="Filter search results by artist name")):
     token = get_token()
     async with httpx.AsyncClient() as client:
-        # Build the query string with optional artist filter
-        query_string = q
-        if artist:
-            query_string = f"{q} artist:\"{artist}\""
-        
         params = {
-            "query": query_string,
+            "query": q,
             "limit": limit,
             "app_id": APP_ID,
             "user_auth_token": token
         }
+        
+        # If artist filter is provided, we need to filter the results after fetching
+        # since Qobuz's search API doesn't support artist filtering in the query string for tracks
         r = await client.get(f"{BASE}/catalog/search", params=params)
         if r.status_code == 401:
             raise HTTPException(status_code=401, detail="Qobuz token expired — update QOBUZ_AUTH_TOKEN")
         r.raise_for_status()
-        return r.json()
+        result = r.json()
+        
+        # Filter tracks by artist name if artist parameter is provided
+        if artist and "tracks" in result:
+            filtered_tracks = []
+            for track in result["tracks"].get("items", []):
+                # Check if any artist matches the filter (case-insensitive)
+                track_artists = track.get("artists", [])
+                for artist_info in track_artists:
+                    artist_name = artist_info.get("name", "").lower()
+                    if artist.lower() in artist_name or artist_name in artist.lower():
+                        filtered_tracks.append(track)
+                        break
+            
+            # Update the tracks items with filtered results
+            result["tracks"]["items"] = filtered_tracks
+            result["tracks"]["count"] = len(filtered_tracks)
+        
+        return result
 
 
 @app.get("/track/{track_id}")

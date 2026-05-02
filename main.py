@@ -204,8 +204,8 @@ async def search(q: str = Query(...), limit: int = 20, artist: Optional[str] = Q
                 # Check performer field first (primary field for tracks)
                 performer = track.get("performer")
                 if performer and isinstance(performer, dict):
-                    performer_name = performer.get("name", "").lower()
-                    if artist_lower in performer_name or performer_name in artist_lower:
+                    performer_name = performer.get("name", "")
+                    if performer_name and artist_lower in performer_name.lower():
                         filtered_tracks.append(track)
                         continue
                 
@@ -215,8 +215,8 @@ async def search(q: str = Query(...), limit: int = 20, artist: Optional[str] = Q
                     matched = False
                     for artist_info in track_artists:
                         if isinstance(artist_info, dict):
-                            artist_name = artist_info.get("name", "").lower()
-                            if artist_lower in artist_name or artist_name in artist_lower:
+                            artist_name = artist_info.get("name", "")
+                            if artist_name and artist_lower in artist_name.lower():
                                 matched = True
                                 break
                     if matched:
@@ -227,15 +227,16 @@ async def search(q: str = Query(...), limit: int = 20, artist: Optional[str] = Q
                 artist_info = track.get("artist")
                 if artist_info:
                     if isinstance(artist_info, dict):
-                        artist_name = artist_info.get("name", "").lower()
+                        artist_name = artist_info.get("name", "")
                     else:
-                        artist_name = str(artist_info).lower()
-                    if artist_lower in artist_name or artist_name in artist_lower:
+                        artist_name = str(artist_info)
+                    if artist_name and artist_lower in artist_name.lower():
                         filtered_tracks.append(track)
             
             # Update the tracks items with filtered results
             result["tracks"]["items"] = filtered_tracks
             result["tracks"]["count"] = len(filtered_tracks)
+            result["tracks"]["total"] = len(filtered_tracks)
         
         return result
 

@@ -256,13 +256,12 @@ async def get_album(album_id: str):
 
 @app.get("/artist/{artist_id}")
 @cached_endpoint("artist", ttl=CACHE_TTL_ARTIST)  # Cache artist info for 10 minutes
-async def get_artist(artist_id: str, limit: int = 25, extra: str = Query(default="albums", description="Extra data to fetch: albums, tracks, playlists")):
+async def get_artist(artist_id: str, limit: int = 25):
     token = get_token()
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{BASE}/artist/get", params={
             "artist_id": artist_id,
             "limit": limit,
-            "type": extra,
             "app_id": APP_ID,
             "user_auth_token": token
         })

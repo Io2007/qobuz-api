@@ -1,54 +1,37 @@
-```gitignore
-# Python
+```
+# Compiled and build artifacts
+*.pyc
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+
+# Dependencies
+.venv/
+venv/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
 
 # Environment
 .env
 .env.local
 *.env.*
 
-# IDE
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# Logs
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Coverage
+# Coverage reports
 .coverage
 coverage/
 htmlcov/
 
-# Temporary files
-*.tmp
-*.temp
+# Python cache
+.mypy_cache/
+.pytest_cache/
+
+# Distribution artifacts
+dist/
+build/
+*.egg-info/
 ```
-
-Wait, let me reconsider. The only modified file is `main.py`, which is a source file. There are no build artifacts, dependencies, or temporary files in the change list that would require adding ignore rules.
-
-(empty)

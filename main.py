@@ -197,36 +197,41 @@ async def search(q: str = Query(...), limit: int = 20, artist: Optional[str] = Q
         # Filter tracks by artist name if artist parameter is provided
         if artist and "tracks" in result:
             filtered_tracks = []
+            artist_lower = artist.lower()
+            
             for track in result["tracks"].get("items", []):
-                # Check if any artist matches the filter (case-insensitive)
-                # Try multiple possible artist field structures
-                track_artists = track.get("artists", [])
-                
-                # If no artists array, try single artist field
-                if not track_artists:
-                    artist_info = track.get("artist")
-                    if artist_info:
-                        # Could be a dict with name or just a string
-                        if isinstance(artist_info, dict):
-                            track_artists = [artist_info]
-                        else:
-                            # It's a string, create a pseudo artist object
-                            track_artists = [{"name": artist_info}]
-                
-                # Also check performer as fallback
-                if not track_artists:
-                    performer = track.get("performer")
-                    if performer:
-                        if isinstance(performer, dict):
-                            track_artists = [performer]
-                        else:
-                            track_artists = [{"name": performer}]
-                
-                for artist_info in track_artists:
-                    artist_name = artist_info.get("name", "").lower() if isinstance(artist_info, dict) else str(artist_info).lower()
-                    if artist.lower() in artist_name or artist_name in artist.lower():
+                # Qobuz API returns tracks with 'performer' field as dict with 'name' and 'id'
+                # Check performer field first (primary field for tracks)
+                performer = track.get("performer")
+                if performer and isinstance(performer, dict):
+                    performer_name = performer.get("name", "").lower()
+                    if artist_lower in performer_name or performer_name in artist_lower:
                         filtered_tracks.append(track)
-                        break
+                        continue
+                
+                # Fallback: check artists array
+                track_artists = track.get("artists", [])
+                if track_artists:
+                    matched = False
+                    for artist_info in track_artists:
+                        if isinstance(artist_info, dict):
+                            artist_name = artist_info.get("name", "").lower()
+                            if artist_lower in artist_name or artist_name in artist_lower:
+                                matched = True
+                                break
+                    if matched:
+                        filtered_tracks.append(track)
+                        continue
+                
+                # Fallback: check single artist field
+                artist_info = track.get("artist")
+                if artist_info:
+                    if isinstance(artist_info, dict):
+                        artist_name = artist_info.get("name", "").lower()
+                    else:
+                        artist_name = str(artist_info).lower()
+                    if artist_lower in artist_name or artist_name in artist_lower:
+                        filtered_tracks.append(track)
             
             # Update the tracks items with filtered results
             result["tracks"]["items"] = filtered_tracks

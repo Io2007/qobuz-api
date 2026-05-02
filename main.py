@@ -199,9 +199,31 @@ async def search(q: str = Query(...), limit: int = 20, artist: Optional[str] = Q
             filtered_tracks = []
             for track in result["tracks"].get("items", []):
                 # Check if any artist matches the filter (case-insensitive)
+                # Try multiple possible artist field structures
                 track_artists = track.get("artists", [])
+                
+                # If no artists array, try single artist field
+                if not track_artists:
+                    artist_info = track.get("artist")
+                    if artist_info:
+                        # Could be a dict with name or just a string
+                        if isinstance(artist_info, dict):
+                            track_artists = [artist_info]
+                        else:
+                            # It's a string, create a pseudo artist object
+                            track_artists = [{"name": artist_info}]
+                
+                # Also check performer as fallback
+                if not track_artists:
+                    performer = track.get("performer")
+                    if performer:
+                        if isinstance(performer, dict):
+                            track_artists = [performer]
+                        else:
+                            track_artists = [{"name": performer}]
+                
                 for artist_info in track_artists:
-                    artist_name = artist_info.get("name", "").lower()
+                    artist_name = artist_info.get("name", "").lower() if isinstance(artist_info, dict) else str(artist_info).lower()
                     if artist.lower() in artist_name or artist_name in artist.lower():
                         filtered_tracks.append(track)
                         break
@@ -209,6 +231,36 @@ async def search(q: str = Query(...), limit: int = 20, artist: Optional[str] = Q
             # Update the tracks items with filtered results
             result["tracks"]["items"] = filtered_tracks
             result["tracks"]["count"] = len(filtered_tracks)
+        
+        # Filter albums by artist name if artist parameter is provided
+        if artist and "albums" in result:
+            filtered_albums = []
+            for album in result["albums"].get("items", []):
+                # Check if any artist matches the filter (case-insensitive)
+                # Try multiple possible artist field structures
+                album_artists = album.get("artists", [])
+                
+                # If no artists array, try single artist field
+                if not album_artists:
+                    artist_info = album.get("artist")
+                    if artist_info:
+                        # Could be a dict with name or just a string
+                        if isinstance(artist_info, dict):
+                            album_artists = [artist_info]
+                        else:
+                            # It's a string, create a pseudo artist object
+                            album_artists = [{"name": artist_info}]
+                
+                for artist_info in album_artists:
+                    artist_name = artist_info.get("name", "").lower() if isinstance(artist_info, dict) else str(artist_info).lower()
+                    if artist.lower() in artist_name or artist_name in artist.lower():
+                        filtered_albums.append(album)
+                        break
+            
+            # Update the albums items with filtered results
+            result["albums"]["items"] = filtered_albums
+            result["albums"]["count"] = len(filtered_albums)
+            result["albums"]["total"] = len(filtered_albums)
         
         return result
 
